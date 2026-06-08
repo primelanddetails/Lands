@@ -96,7 +96,7 @@
                                     const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
                                     if (match) { 
                                         // Load Google's native preview window to bypass the security block
-                                        imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none; pointer-events: none;"></iframe>`; 
+                                        imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`;
                                     }
                                 } else {
                                     // Standard image fallback for non-Google links
