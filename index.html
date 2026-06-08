@@ -87,14 +87,22 @@
                             const description = row.Description || 'No active prospectus text provided.';
                             let photoUrl = row['Site Photo'] || row.ImageURL || '';
 
-                            // Google Drive Image Converter
-                            if (photoUrl.includes('drive.google.com')) {
-                                const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-                                if (match) { photoUrl = `https://drive.google.com/uc?id=${match[1]}`; }
-                            }
+                            // UPGRADED: Google Drive iFrame Bypass
+                            let imageHTML = '';
 
-                            // Inject full-size image if available
-                            const imageHTML = photoUrl ? `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">` : '';
+                            if (photoUrl) {
+                                if (photoUrl.includes('drive.google.com')) {
+                                    // Extract the unique file ID
+                                    const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                                    if (match) { 
+                                        // Load Google's native preview window to bypass the security block
+                                        imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none; pointer-events: none;"></iframe>`; 
+                                    }
+                                } else {
+                                    // Standard image fallback for non-Google links
+                                    imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
+                                }
+                            }
 
                             const cardContent = `
                                 <div class="card-header">${name}</div>
@@ -111,7 +119,6 @@
                 });
             }
         });
-
         // 4. ADVANCED PARCEL MEASUREMENT ENGINE
         let isDrawing = false; let drawnPoints = []; let drawPointsGroup = L.layerGroup().addTo(map); let livePolyline = null; let finalPolygon = null;
 
