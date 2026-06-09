@@ -16,14 +16,14 @@
         body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #111; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
         
-        /* Control Panel */
-        .control-panel { position: absolute; top: 70px; right: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 280px; }
+        /* Control Panel - Snapped to Top Right */
+        .control-panel { position: absolute; top: 20px; right: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 280px; }
         .control-panel h2 { margin: 0 0 10px 0; font-size: 16px; color: #004b87; font-weight: bold; }
         .panel-btn { width: 100%; background: #004b87; color: white; border: none; padding: 10px; margin-bottom: 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; transition: background 0.2s; }
         .panel-btn:hover { background: #003360; }
         .panel-btn.active { background: #e74c3c; }
         
-        /* UPGRADED: Expanded Measurement Stats */
+        /* Measurement Stats */
         .measurement-stats { margin-top: 10px; padding: 12px; background: #e6f0fa; border-radius: 4px; font-size: 13px; color: #222; display: none; border-left: 4px solid #004b87; line-height: 1.6; }
         .measurement-stats div { border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 4px; margin-bottom: 4px; }
         .measurement-stats div:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
@@ -72,6 +72,9 @@
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
         
+        // NEW: Topography & Contour Layer
+        const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenTopoMap' });
+        
         // Define Overlays (Roads/Labels for Satellite)
         const roadsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         const labelsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
@@ -81,10 +84,11 @@
         roadsLayer.addTo(map);
         labelsLayer.addTo(map);
 
-        // NEW: Layer Switcher Control
+        // Layer Switcher Control
         const baseMaps = {
             "Satellite View": satelliteLayer,
-            "OpenStreetMap": osmLayer
+            "Street Map": osmLayer,
+            "Terrain & Contours": topoLayer
         };
         const overlayMaps = {
             "Satellite Roads": roadsLayer,
@@ -92,9 +96,13 @@
         };
         L.control.layers(baseMaps, overlayMaps, { position: 'bottomleft' }).addTo(map);
 
-        // NEW: Search Bar (Geocoder)
-       // NEW: Search Bar (Geocoder)
+        // 3. UPGRADED SEARCH ENGINE (Auto-Complete Dropdown)
+        const geocoderOptions = L.Control.Geocoder.nominatim({
+            geocodingQueryParams: { countrycodes: 'lk' } // Prioritizes highly accurate local suggestions
+        });
+
         L.Control.geocoder({
+            geocoder: geocoderOptions,
             defaultMarkGeocode: false,
             placeholder: "Search for a location...",
             position: 'topleft'
@@ -103,13 +111,16 @@
             const bbox = e.geocode.bbox;
             const poly = L.polygon([ bbox.getSouthEast(), bbox.getNorthEast(), bbox.getNorthWest(), bbox.getSouthWest() ]);
             map.fitBounds(poly.getBounds());
+            
+            // Add a temporary marker for the searched location
+            const searchMarker = L.marker(e.geocode.center).addTo(map).bindPopup(`<b>${e.geocode.name}</b>`).openPopup();
         })
         .addTo(map);
 
         const activePulseIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='pulse-icon'></div>", iconSize: [22, 22], iconAnchor: [11, 11] });
         const passiveStaticIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='viewed-icon'></div>", iconSize: [14, 14], iconAnchor: [7, 7] });
 
-        // 3. PIPELINE DATA INTEGRATION
+        // 4. PIPELINE DATA INTEGRATION
         Papa.parse(csvUrl, {
             download: true,
             header: true,
@@ -154,7 +165,7 @@
             }
         });
 
-        // 4. ADVANCED PARCEL MEASUREMENT ENGINE
+        // 5. ADVANCED PARCEL MEASUREMENT ENGINE
         let isDrawing = false; let drawnPoints = []; let drawPointsGroup = L.layerGroup().addTo(map); let livePolyline = null; let finalPolygon = null;
 
         function toggleDrawMode() {
@@ -198,20 +209,16 @@
             }
             const finalAreaSqM = Math.abs(areaInMeters / 2);
             
-            // NEW: Comprehensive Math Conversions
             const sqFt = finalAreaSqM * 10.7639;
             const totalHectares = finalAreaSqM / 10000;
             const totalAcres = finalAreaSqM / 4046.86;
             const totalPerches = finalAreaSqM / 25.2929;
 
-            // Sri Lankan Standard Split (Acres, Roods, Perches)
             const acresInt = Math.floor(totalPerches / 160);
             const roodsInt = Math.floor((totalPerches % 160) / 40);
             const perchesRem = (totalPerches % 160) % 40;
 
             document.getElementById('statsPanel').style.display = 'block';
-            
-            // Inject Math into UI
             document.getElementById('statARP').innerHTML = `<b>A-R-P:</b> ${acresInt} Acres, ${roodsInt} Roods, ${perchesRem.toLocaleString(undefined, {maximumFractionDigits: 2})} Perches`;
             document.getElementById('statAcres').innerHTML = `<b>Only Acres:</b> ${totalAcres.toLocaleString(undefined, {maximumFractionDigits: 4})} A`;
             document.getElementById('statPerches').innerHTML = `<b>Only Perches:</b> ${totalPerches.toLocaleString(undefined, {maximumFractionDigits: 2})} P`;
