@@ -93,9 +93,11 @@
         L.control.layers(baseMaps, overlayMaps, { position: 'bottomleft' }).addTo(map);
 
         // NEW: Search Bar (Geocoder)
+       // NEW: Search Bar (Geocoder)
         L.Control.geocoder({
             defaultMarkGeocode: false,
-            placeholder: "Search for a location..."
+            placeholder: "Search for a location...",
+            position: 'topleft'
         })
         .on('markgeocode', function(e) {
             const bbox = e.geocode.bbox;
