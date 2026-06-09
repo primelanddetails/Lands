@@ -9,28 +9,30 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
     <style>
         body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #111; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
         
         /* Control Panel */
-        .control-panel { position: absolute; top: 20px; right: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 260px; }
+        .control-panel { position: absolute; top: 20px; right: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 280px; }
         .control-panel h2 { margin: 0 0 10px 0; font-size: 16px; color: #004b87; font-weight: bold; }
         .panel-btn { width: 100%; background: #004b87; color: white; border: none; padding: 10px; margin-bottom: 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; transition: background 0.2s; }
         .panel-btn:hover { background: #003360; }
         .panel-btn.active { background: #e74c3c; }
-        .measurement-stats { margin-top: 10px; padding: 10px; background: #e6f0fa; border-radius: 4px; font-size: 13px; color: #333; display: none; border-left: 4px solid #004b87; }
-        .measurement-stats div { margin-bottom: 4px; }
+        
+        /* UPGRADED: Expanded Measurement Stats */
+        .measurement-stats { margin-top: 10px; padding: 12px; background: #e6f0fa; border-radius: 4px; font-size: 13px; color: #222; display: none; border-left: 4px solid #004b87; line-height: 1.6; }
+        .measurement-stats div { border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 4px; margin-bottom: 4px; }
+        .measurement-stats div:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 
-        /* UPGRADED: Large Executive Pop-up Card */
+        /* Pop-up Card */
         .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 15px 30px rgba(0,0,0,0.5); padding: 0; overflow: hidden; }
-        .leaflet-popup-content { margin: 0; width: 400px !important; } /* Wider Card */
-        
+        .leaflet-popup-content { margin: 0; width: 400px !important; } 
         .card-header { background: #004b87; color: white; padding: 15px; font-size: 16px; font-weight: bold; margin: 0; }
-        
-        /* UPGRADED: Full Size Image Display */
         .card-img { width: 100%; height: 250px; object-fit: cover; display: block; background: #eee; border-bottom: 1px solid #ccc; }
-        
         .card-body { padding: 18px; background: #fff; }
         .card-body p { margin: 0 0 15px 0; font-size: 14px; color: #333; line-height: 1.5; }
         
@@ -46,27 +48,61 @@
         <h2>Land Survey Tools</h2>
         <button id="drawBtn" class="panel-btn" onclick="toggleDrawMode()">Enable Plot Boundary Tool</button>
         <button id="clearBtn" class="panel-btn" style="background:#7f8c8d;" onclick="clearDrawings()">Clear Measurement Layers</button>
+        
         <div id="statsPanel" class="measurement-stats">
-            <strong>Calculated Parcel Size:</strong>
-            <div id="statMeters" style="margin-top:5px;"></div>
-            <div id="statFeet"></div>
+            <div id="statARP" style="color: #004b87; font-size: 14px;"></div>
+            <div id="statAcres"></div>
             <div id="statPerches"></div>
+            <div id="statHectares"></div>
+            <div id="statFeet"></div>
         </div>
     </div>
 
     <div id="map"></div>
 
     <script>
-        // 1. DATA CONFIGURATION (Paste your Google Sheet CSV Link here)
+        // 1. DATA CONFIGURATION
         const baseCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ77m59Sn5PwSO2Ac4CvSVzmCIC11vqPfD-VaYzZlAK6cgzDs_tQWWbvaIN4LsG6NC3aPQN-UPsuhcg/pub?gid=162359919&single=true&output=csv';
         const csvUrl = baseCsvUrl + '&v=' + new Date().getTime();
 
-        // 2. MAP INITIALIZATION
+        // 2. MAP INITIALIZATION & LAYERS
         const map = L.map('map', { doubleClickZoom: false }).setView([6.9271, 79.8612], 8);
 
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+        // Define Base Maps
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+        
+        // Define Overlays (Roads/Labels for Satellite)
+        const roadsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+        const labelsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+
+        // Add default layers
+        satelliteLayer.addTo(map);
+        roadsLayer.addTo(map);
+        labelsLayer.addTo(map);
+
+        // NEW: Layer Switcher Control
+        const baseMaps = {
+            "Satellite View": satelliteLayer,
+            "OpenStreetMap": osmLayer
+        };
+        const overlayMaps = {
+            "Satellite Roads": roadsLayer,
+            "Satellite Labels": labelsLayer
+        };
+        L.control.layers(baseMaps, overlayMaps, { position: 'bottomleft' }).addTo(map);
+
+        // NEW: Search Bar (Geocoder)
+        L.Control.geocoder({
+            defaultMarkGeocode: false,
+            placeholder: "Search for a location..."
+        })
+        .on('markgeocode', function(e) {
+            const bbox = e.geocode.bbox;
+            const poly = L.polygon([ bbox.getSouthEast(), bbox.getNorthEast(), bbox.getNorthWest(), bbox.getSouthWest() ]);
+            map.fitBounds(poly.getBounds());
+        })
+        .addTo(map);
 
         const activePulseIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='pulse-icon'></div>", iconSize: [22, 22], iconAnchor: [11, 11] });
         const passiveStaticIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='viewed-icon'></div>", iconSize: [14, 14], iconAnchor: [7, 7] });
@@ -87,19 +123,15 @@
                             const description = row.Description || 'No active prospectus text provided.';
                             let photoUrl = row['Site Photo'] || row.ImageURL || '';
 
-                            // UPGRADED: Google Drive iFrame Bypass
+                            // Google Drive iFrame Bypass
                             let imageHTML = '';
-
                             if (photoUrl) {
                                 if (photoUrl.includes('drive.google.com')) {
-                                    // Extract the unique file ID
                                     const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
                                     if (match) { 
-                                        // Load Google's native preview window to bypass the security block
-                                        imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`;
+                                        imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`; 
                                     }
                                 } else {
-                                    // Standard image fallback for non-Google links
                                     imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
                                 }
                             }
@@ -119,6 +151,7 @@
                 });
             }
         });
+
         // 4. ADVANCED PARCEL MEASUREMENT ENGINE
         let isDrawing = false; let drawnPoints = []; let drawPointsGroup = L.layerGroup().addTo(map); let livePolyline = null; let finalPolygon = null;
 
@@ -162,10 +195,26 @@
                 areaInMeters += ((p1.lng * lngFactor) * (p2.lat * latFactor)) - ((p2.lng * lngFactor) * (p1.lat * latFactor));
             }
             const finalAreaSqM = Math.abs(areaInMeters / 2);
+            
+            // NEW: Comprehensive Math Conversions
+            const sqFt = finalAreaSqM * 10.7639;
+            const totalHectares = finalAreaSqM / 10000;
+            const totalAcres = finalAreaSqM / 4046.86;
+            const totalPerches = finalAreaSqM / 25.2929;
+
+            // Sri Lankan Standard Split (Acres, Roods, Perches)
+            const acresInt = Math.floor(totalPerches / 160);
+            const roodsInt = Math.floor((totalPerches % 160) / 40);
+            const perchesRem = (totalPerches % 160) % 40;
+
             document.getElementById('statsPanel').style.display = 'block';
-            document.getElementById('statMeters').innerHTML = `<b>Metric:</b> ${finalAreaSqM.toLocaleString(undefined, {maximumFractionDigits: 2})} sq.m`;
-            document.getElementById('statFeet').innerHTML = `<b>Imperial:</b> ${(finalAreaSqM * 10.7639).toLocaleString(undefined, {maximumFractionDigits: 2})} sq.ft`;
-            document.getElementById('statPerches').innerHTML = `<b>Land Size:</b> ${(finalAreaSqM / 25.2929).toLocaleString(undefined, {maximumFractionDigits: 2})} Perches`;
+            
+            // Inject Math into UI
+            document.getElementById('statARP').innerHTML = `<b>A-R-P:</b> ${acresInt} Acres, ${roodsInt} Roods, ${perchesRem.toLocaleString(undefined, {maximumFractionDigits: 2})} Perches`;
+            document.getElementById('statAcres').innerHTML = `<b>Only Acres:</b> ${totalAcres.toLocaleString(undefined, {maximumFractionDigits: 4})} A`;
+            document.getElementById('statPerches').innerHTML = `<b>Only Perches:</b> ${totalPerches.toLocaleString(undefined, {maximumFractionDigits: 2})} P`;
+            document.getElementById('statHectares').innerHTML = `<b>Metric:</b> ${totalHectares.toLocaleString(undefined, {maximumFractionDigits: 4})} Hectares`;
+            document.getElementById('statFeet').innerHTML = `<b>Imperial:</b> ${sqFt.toLocaleString(undefined, {maximumFractionDigits: 2})} sq.ft`;
         }
 
         function clearDrawings() { drawnPoints = []; drawPointsGroup.clearLayers(); livePolyline = null; finalPolygon = null; document.getElementById('statsPanel').style.display = 'none'; }
