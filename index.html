@@ -55,7 +55,7 @@
         <div id="statsPanel" class="measurement-stats">
             <div id="statARP" style="color: #004b87; font-size: 14px;"></div>
             <div id="statAcres"></div>
-            <div id="statPerches"></div>
+            . <div id="statPerches"></div>
             <div id="statHectares"></div>
             <div id="statFeet"></div>
         </div>
@@ -64,12 +64,14 @@
     <div id="map"></div>
 
     <script>
-        // DATA CONFIGURATION
         const baseCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ77m59Sn5PwSO2Ac4CvSVzmCIC11vqPfD-VaYzZlAK6cgzDs_tQWWbvaIN4LsG6NC3aPQN-UPsuhcg/pub?gid=162359919&single=true&output=csv';
         const csvUrl = baseCsvUrl + '&v=' + new Date().getTime(); 
         const webAppUrl = "https://script.google.com/macros/s/AKfycbzzSS1NI5VqKSOGqhEbDeEjNLAaIzUIcSpMKQNCGHvOdPHj8hl0HRaEtQ1ZAgP_w-pJYg/exec";
 
-        // MAP INITIALIZATION
+        // Global state storage to allow instant pop-up rebuilding
+        const markersMap = {};
+        const rowsDataMap = {};
+
         const map = L.map('map', { doubleClickZoom: false }).setView([6.9271, 79.8612], 8);
 
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
@@ -93,7 +95,78 @@
             L.marker(e.geocode.center).addTo(map).bindPopup(`<b>${e.geocode.name}</b>`).openPopup();
         }).addTo(map);
 
-        // DATA FETCHING & UI GENERATION
+        // REUSABLE POPUP BUILDER ENGINE
+        function generateCardContent(row) {
+            const projectId = row['Project Number'];
+            const name = row.Name || 'Acquisition Target';
+            const lat = parseFloat(row.Latitude);
+            const lng = parseFloat(row.Longitude);
+            let photoUrl = row['Site Photo'] || '';
+            const mgtStatus = row['Management Status'] || '';
+
+            let imageHTML = '';
+            if (photoUrl && photoUrl.includes('drive.google.com')) {
+                const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                if (match) imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`; 
+            } else if (photoUrl) {
+                imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
+            }
+
+            // Generate Map URLs natively
+            const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+            row['Google Maps Link'] = mapsUrl; // Push internally into local entry object
+
+            let allDataText = "";
+            let allDataHTML = "<div class='data-scrollbox' style='max-height: 140px; overflow-y: auto; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; line-height: 1.4;'>";
+
+            for (const [columnName, columnValue] of Object.entries(row)) {
+                if (columnValue && !['Latitude', 'Longitude', 'Site Photo', 'Timestamp', 'Coordinates'].includes(columnName)) {
+                    allDataText += `*${columnName}:* ${columnValue}\n`;
+                    allDataHTML += `<strong style="color:#004b87;">${columnName}:</strong> ${columnValue}<br><hr style="margin:4px 0; border:0; border-top:1px solid #eee;">`;
+                }
+            }
+            allDataHTML += "</div>";
+
+            const whatsappText = `📍 *NEW LAND PROSPECT: [${projectId}] ${name}*
+*Status:* ${mgtStatus || 'Pending Review'}
+*Google Maps Navigation:* ${mapsUrl}
+
+📋 *ALL PROPERTY DETAILS:*
+${allDataText}
+📸 *Drive Photos:* ${photoUrl}`;
+
+            return `
+                <div class="card-header">[${projectId}] ${name}</div>
+                ${imageHTML}
+                <div class="card-body">
+                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 13px;">Full Property Data:</h4>
+                    ${allDataHTML}
+                    
+                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">Management Action</h4>
+                    
+                    <select id="status-${projectId}" class="form-input">
+                        <option value="" disabled ${!mgtStatus ? 'selected' : ''}>Select Status...</option>
+                        <option value="1. Previously Inspected Property" ${mgtStatus.includes('1.') ? 'selected' : ''}>1. Previously Inspected</option>
+                        <option value="2. Previously Evaluated and Rejected" ${mgtStatus.includes('2.') ? 'selected' : ''}>2. Evaluated & Rejected</option>
+                        <option value="3. Investigate more" ${mgtStatus.includes('3.') ? 'selected' : ''}>3. Investigate More</option>
+                        <option value="4. Recommended for Further Evaluation" ${mgtStatus.includes('4.') ? 'selected' : ''}>4. Recommended to Proceed</option>
+                        <option value="5. Do Not Proceed" ${mgtStatus.includes('5.') ? 'selected' : ''}>5. Do Not Proceed</option>
+                    </select>
+                    
+                    <input type="text" id="reason-${projectId}" class="form-input" placeholder="Reason (if rejected)" value="${row['Rejection Reason'] || ''}">
+                    <textarea id="comments-${projectId}" class="form-input" placeholder="Additional comments..." style="resize: vertical;">${row['Management Comments'] || ''}</textarea>
+                    
+                    <button onclick="updateStatus('${projectId}', event)" style="background: #004b87; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-bottom: 8px; transition: background 0.3s;">
+                        Update Database
+                    </button>
+                    
+                    <button onclick="copyForWhatsApp(\`${encodeURIComponent(whatsappText)}\`)" style="background: #25D366; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                        Copy for WhatsApp 📱
+                    </button>
+                </div>
+            `;
+        }
+
         Papa.parse(csvUrl, {
             download: true,
             header: true,
@@ -105,15 +178,13 @@
                         const lng = parseFloat(row.Longitude);
 
                         if (!isNaN(lat) && !isNaN(lng)) {
-                            // Safely grab Project ID
                             const projectId = row['Project Number'];
-                            if(!projectId) return; // Skip empty rows
+                            if(!projectId) return; 
 
-                            const name = row.Name || 'Acquisition Target';
-                            let photoUrl = row['Site Photo'] || '';
+                            // Map structural memory assignment
+                            rowsDataMap[projectId] = row;
+
                             const mgtStatus = row['Management Status'] || '';
-
-                            // 1. Color Logic
                             let iconColorClass = 'marker-blue'; 
                             if (mgtStatus.includes('2.') || mgtStatus.includes('5.') || mgtStatus.includes('Rejected') || mgtStatus.includes('Do Not Proceed')) {
                                 iconColorClass = 'marker-red';
@@ -123,151 +194,103 @@
                                 iconColorClass = 'marker-yellow';
                             }
 
-                            // Injecting the exact Project ID into the icon's HTML so we can change its color instantly later
                             const activeMarkerIcon = L.divIcon({ 
                                 className: 'custom-div-icon', 
                                 html: `<div id="icon-${projectId}" class='pulse-icon ${iconColorClass}'></div>`, 
                                 iconSize: [22, 22], iconAnchor: [11, 11] 
                             });
 
-                            let imageHTML = '';
-                            if (photoUrl && photoUrl.includes('drive.google.com')) {
-                                const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-                                if (match) imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`; 
-                            } else if (photoUrl) {
-                                imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
-                            }
-
-                            let allDataText = "";
-                            let allDataHTML = "<div style='max-height: 140px; overflow-y: auto; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; line-height: 1.4;'>";
-
-                            for (const [columnName, columnValue] of Object.entries(row)) {
-                                if (columnValue && !['Latitude', 'Longitude', 'Site Photo', 'Timestamp', 'Coordinates'].includes(columnName)) {
-                                    allDataText += `*${columnName}:* ${columnValue}\n`;
-                                    allDataHTML += `<strong style="color:#004b87;">${columnName}:</strong> ${columnValue}<br><hr style="margin:4px 0; border:0; border-top:1px solid #eee;">`;
-                                }
-                            }
-                            allDataHTML += "</div>";
-
-                            const whatsappText = `📍 *NEW LAND PROSPECT: [${projectId}] ${name}*
-*Status:* ${mgtStatus || 'Pending Review'}
-*Coordinates:* ${lat}, ${lng}
-
-📋 *ALL PROPERTY DETAILS:*
-${allDataText}
-📸 *Drive Photos:* ${photoUrl}`;
-
-                            // ID bindings changed to projectId instead of timestamp for stability
-                            const cardContent = `
-                                <div class="card-header">[${projectId}] ${name}</div>
-                                ${imageHTML}
-                                <div class="card-body">
-                                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 13px;">Full Property Data:</h4>
-                                    ${allDataHTML}
-                                    
-                                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">Management Action</h4>
-                                    
-                                    <select id="status-${projectId}" class="form-input">
-                                        <option value="" disabled ${!mgtStatus ? 'selected' : ''}>Select Status...</option>
-                                        <option value="1. Previously Inspected Property" ${mgtStatus.includes('1.') ? 'selected' : ''}>1. Previously Inspected</option>
-                                        <option value="2. Previously Evaluated and Rejected" ${mgtStatus.includes('2.') ? 'selected' : ''}>2. Evaluated & Rejected</option>
-                                        <option value="3. Investigate more" ${mgtStatus.includes('3.') ? 'selected' : ''}>3. Investigate More</option>
-                                        <option value="4. Recommended for Further Evaluation" ${mgtStatus.includes('4.') ? 'selected' : ''}>4. Recommended to Proceed</option>
-                                        <option value="5. Do Not Proceed" ${mgtStatus.includes('5.') ? 'selected' : ''}>5. Do Not Proceed</option>
-                                    </select>
-                                    
-                                    <input type="text" id="reason-${projectId}" class="form-input" placeholder="Reason (if rejected)" value="${row['Rejection Reason'] || ''}">
-                                    <textarea id="comments-${projectId}" class="form-input" placeholder="Additional comments..." style="resize: vertical;">${row['Management Comments'] || ''}</textarea>
-                                    
-                                    <button onclick="updateStatus('${projectId}', event)" style="background: #004b87; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-bottom: 8px; transition: background 0.3s;">
-                                        Update Database
-                                    </button>
-                                    
-                                    <button onclick="copyForWhatsApp(\`${encodeURIComponent(whatsappText)}\`)" style="background: #25D366; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold;">
-                                        Copy for WhatsApp 📱
-                                    </button>
-                                </div>
-                            `;
-
-                            L.marker([lat, lng], { icon: activeMarkerIcon }).addTo(map).bindPopup(cardContent);
+                            const cardHtml = generateCardContent(row);
+                            const marker = L.marker([lat, lng], { icon: activeMarkerIcon }).addTo(map).bindPopup(cardHtml);
+                            
+                            // Map instance tracking
+                            markersMap[projectId] = marker;
                         }
                     }
                 });
             }
         });
 
-        // SECURE UPDATE & INSTANT COLOR CHANGE
+        // LIVE TWO-WAY DATA MODIFICATION ENGINE
         async function updateStatus(projectId, event) {
-            const statusElement = document.getElementById(`status-${projectId}`);
-            const reasonElement = document.getElementById(`reason-${projectId}`);
-            const commentsElement = document.getElementById(`comments-${projectId}`);
+          const statusElement = document.getElementById(`status-${projectId}`);
+          const reasonElement = document.getElementById(`reason-${projectId}`);
+          const commentsElement = document.getElementById(`comments-${projectId}`);
 
-            const btn = event.target;
-            const originalText = btn.innerText;
-            btn.innerText = "Updating Database...";
-            btn.style.backgroundColor = "#7f8c8d";
-            btn.disabled = true;
+          const btn = event.target;
+          const originalText = btn.innerText;
+          btn.innerText = "Updating Database...";
+          btn.style.backgroundColor = "#7f8c8d";
+          btn.disabled = true;
 
-            const selectedStatus = statusElement.value;
+          const selectedStatus = statusElement.value;
 
-            try {
-                const response = await fetch(webAppUrl, {
-                    method: 'POST',
-                    redirect: 'follow', 
-                    headers: { "Content-Type": "text/plain;charset=utf-8" },
-                    body: JSON.stringify({
-                        projectId: projectId, // Sending Project ID instead of timestamp
-                        status: selectedStatus,
-                        reason: reasonElement.value,
-                        comments: commentsElement.value
-                    })
-                });
-                
-                const responseData = await response.json();
-                
-                if(responseData.status === 'success') {
-                    // 1. Instant UI update - bypass Google 5 min wait
-                    const iconDiv = document.getElementById(`icon-${projectId}`);
-                    if (iconDiv) {
-                        // Strip old colors
-                        iconDiv.classList.remove('marker-blue', 'marker-yellow', 'marker-green', 'marker-red');
-                        
-                        // Apply new color instantly based on dropdown value
-                        if (selectedStatus.includes('2.') || selectedStatus.includes('5.') || selectedStatus.includes('Rejected')) {
-                            iconDiv.classList.add('marker-red');
-                        } else if (selectedStatus.includes('4.') || selectedStatus.includes('Recommended')) {
-                            iconDiv.classList.add('marker-green');
-                        } else if (selectedStatus.includes('1.') || selectedStatus.includes('3.') || selectedStatus.includes('Investigate')) {
-                            iconDiv.classList.add('marker-yellow');
-                        } else {
-                            iconDiv.classList.add('marker-blue');
-                        }
-                    }
+          try {
+              const response = await fetch(webAppUrl, {
+                  method: 'POST',
+                  redirect: 'follow', 
+                  headers: { "Content-Type": "text/plain;charset=utf-8" },
+                  body: JSON.stringify({
+                      projectId: projectId, 
+                      status: selectedStatus,
+                      reason: reasonElement.value,
+                      comments: commentsElement.value
+                  })
+              });
+              
+              const responseData = await response.json();
+              
+              if(responseData.status === 'success') {
+                  // 1. Locally update the internal JSON storage array state
+                  const row = rowsDataMap[projectId];
+                  row['Management Status'] = selectedStatus;
+                  row['Rejection Reason'] = reasonElement.value;
+                  row['Management Comments'] = commentsElement.value;
+                  row['Management Update Time'] = new Date().toLocaleString(); // Local update visibility marker
 
-                    alert('Database Updated Successfully!');
-                    map.closePopup(); 
-                } else {
-                    alert('Backend error: ' + responseData.message);
-                    btn.innerText = originalText;
-                    btn.style.backgroundColor = "#004b87";
-                    btn.disabled = false;
-                }
+                  // 2. Instant Local Marker Color Switcher
+                  const iconDiv = document.getElementById(`icon-${projectId}`);
+                  if (iconDiv) {
+                      iconDiv.classList.remove('marker-blue', 'marker-yellow', 'marker-green', 'marker-red');
+                      if (selectedStatus.includes('2.') || selectedStatus.includes('5.') || selectedStatus.includes('Rejected')) {
+                          iconDiv.classList.add('marker-red');
+                      } else if (selectedStatus.includes('4.') || selectedStatus.includes('Recommended')) {
+                          iconDiv.classList.add('marker-green');
+                      } else if (selectedStatus.includes('1.') || selectedStatus.includes('3.') || selectedStatus.includes('Investigate')) {
+                          iconDiv.classList.add('marker-yellow');
+                      } else {
+                          iconDiv.classList.add('marker-blue');
+                      }
+                  }
 
-            } catch (error) {
-                console.error('Network Error:', error);
-                alert('Update failed. Please check your internet connection.');
-                btn.innerText = originalText;
-                btn.style.backgroundColor = "#004b87";
-                btn.disabled = false;
-            }
+                  // 3. Instant Card Popup Structure Rewrite Engine
+                  const updatedCardHtml = generateCardContent(row);
+                  markersMap[projectId].setPopupContent(updatedCardHtml);
+
+                  alert('Database Updated Successfully! Changes are preserved and visible.');
+                  map.closePopup(); 
+              } else {
+                  alert('Backend error: ' + responseData.message);
+                  btn.innerText = originalText;
+                  btn.style.backgroundColor = "#004b87";
+                  btn.disabled = false;
+              }
+
+          } catch (error) {
+              console.error('Network Error:', error);
+              alert('Update failed. Connection error.');
+              btn.innerText = originalText;
+              btn.style.backgroundColor = "#004b87";
+              btn.disabled = false;
+          }
         }
 
         function copyForWhatsApp(encodedText) {
             const textToCopy = decodeURIComponent(encodedText);
             navigator.clipboard.writeText(textToCopy).then(() => {
-                alert("Land details copied to clipboard! You can now paste it into WhatsApp.");
+                alert("Details with clickable map routing copied!");
             }).catch(err => {
-                alert("Copy failed. Please manually select the text.");
+                alert("Copy failed.");
             });
         }
 
