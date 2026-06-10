@@ -30,16 +30,25 @@
 
         /* Pop-up Card */
         .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 15px 30px rgba(0,0,0,0.5); padding: 0; overflow: hidden; }
-        .leaflet-popup-content { margin: 0; width: 400px !important; } 
+        .leaflet-popup-content { margin: 0; width: 340px !important; } 
         .card-header { background: #004b87; color: white; padding: 15px; font-size: 16px; font-weight: bold; margin: 0; }
-        .card-img { width: 100%; height: 250px; object-fit: cover; display: block; background: #eee; border-bottom: 1px solid #ccc; }
-        .card-body { padding: 18px; background: #fff; }
-        .card-body p { margin: 0 0 15px 0; font-size: 14px; color: #333; line-height: 1.5; }
+        .card-img { width: 100%; height: 200px; object-fit: cover; display: block; background: #eee; border-bottom: 1px solid #ccc; }
+        .card-body { padding: 15px; background: #fff; }
+        .card-body p { margin: 0 0 10px 0; font-size: 14px; color: #333; line-height: 1.5; }
         
-        /* Icons */
-        .pulse-icon { width: 22px; height: 22px; background: #e74c3c; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); animation: radarPulse 1.5s infinite cubic-bezier(0.66, 0, 0, 1); }
-        @keyframes radarPulse { to { box-shadow: 0 0 0 18px rgba(231, 76, 60, 0); } }
-        .viewed-icon { width: 14px; height: 14px; background: #27ae60; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.4); }
+        /* Status Map Marker Icons */
+        .pulse-icon { width: 22px; height: 22px; border-radius: 50%; border: 2px solid white; }
+        .marker-blue { background: #3498db; box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7); animation: pulseBlue 1.5s infinite; }
+        .marker-green { background: #2ecc71; box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); animation: pulseGreen 1.5s infinite; }
+        .marker-yellow { background: #f1c40f; box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.7); animation: pulseYellow 1.5s infinite; }
+        .marker-red { background: #e74c3c; box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); animation: pulseRed 1.5s infinite; }
+
+        @keyframes pulseBlue { to { box-shadow: 0 0 0 18px rgba(52, 152, 219, 0); } }
+        @keyframes pulseGreen { to { box-shadow: 0 0 0 18px rgba(46, 204, 113, 0); } }
+        @keyframes pulseYellow { to { box-shadow: 0 0 0 18px rgba(241, 196, 15, 0); } }
+        @keyframes pulseRed { to { box-shadow: 0 0 0 18px rgba(231, 76, 60, 0); } }
+        
+        .form-input { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
     </style>
 </head>
 <body>
@@ -61,66 +70,50 @@
     <div id="map"></div>
 
     <script>
-        // 1. DATA CONFIGURATION
+        // ==========================================
+        // 1. DATA CONFIGURATION & APPS SCRIPT URL
+        // ==========================================
         const baseCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ77m59Sn5PwSO2Ac4CvSVzmCIC11vqPfD-VaYzZlAK6cgzDs_tQWWbvaIN4LsG6NC3aPQN-UPsuhcg/pub?gid=162359919&single=true&output=csv';
         const csvUrl = baseCsvUrl + '&v=' + new Date().getTime();
+        
+        // The Web App URL you provided
+        const webAppUrl = "https://script.google.com/macros/s/AKfycbzzSS1NI5VqKSOGqhEbDeEjNLAaIzUIcSpMKQNCGHvOdPHj8hl0HRaEtQ1ZAgP_w-pJYg/exec";
 
+        // ==========================================
         // 2. MAP INITIALIZATION & LAYERS
+        // ==========================================
         const map = L.map('map', { doubleClickZoom: false }).setView([6.9271, 79.8612], 8);
 
-        // Define Base Maps
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
-        
-        // NEW: Topography & Contour Layer
         const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenTopoMap' });
         
-        // Define Overlays (Roads/Labels for Satellite)
         const roadsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         const labelsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
 
-        // Add default layers
         satelliteLayer.addTo(map);
         roadsLayer.addTo(map);
         labelsLayer.addTo(map);
 
-        // Layer Switcher Control
-        const baseMaps = {
-            "Satellite View": satelliteLayer,
-            "Street Map": osmLayer,
-            "Terrain & Contours": topoLayer
-        };
-        const overlayMaps = {
-            "Satellite Roads": roadsLayer,
-            "Satellite Labels": labelsLayer
-        };
+        const baseMaps = { "Satellite View": satelliteLayer, "Street Map": osmLayer, "Terrain & Contours": topoLayer };
+        const overlayMaps = { "Satellite Roads": roadsLayer, "Satellite Labels": labelsLayer };
         L.control.layers(baseMaps, overlayMaps, { position: 'bottomleft' }).addTo(map);
 
-        // 3. UPGRADED SEARCH ENGINE (Auto-Complete Dropdown)
-        const geocoderOptions = L.Control.Geocoder.nominatim({
-            geocodingQueryParams: { countrycodes: 'lk' } // Prioritizes highly accurate local suggestions
-        });
-
-        L.Control.geocoder({
-            geocoder: geocoderOptions,
-            defaultMarkGeocode: false,
-            placeholder: "Search for a location...",
-            position: 'topleft'
-        })
+        // ==========================================
+        // 3. SEARCH ENGINE
+        // ==========================================
+        const geocoderOptions = L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'lk' } });
+        L.Control.geocoder({ geocoder: geocoderOptions, defaultMarkGeocode: false, placeholder: "Search for a location...", position: 'topleft' })
         .on('markgeocode', function(e) {
             const bbox = e.geocode.bbox;
             const poly = L.polygon([ bbox.getSouthEast(), bbox.getNorthEast(), bbox.getNorthWest(), bbox.getSouthWest() ]);
             map.fitBounds(poly.getBounds());
-            
-            // Add a temporary marker for the searched location
-            const searchMarker = L.marker(e.geocode.center).addTo(map).bindPopup(`<b>${e.geocode.name}</b>`).openPopup();
-        })
-        .addTo(map);
+            L.marker(e.geocode.center).addTo(map).bindPopup(`<b>${e.geocode.name}</b>`).openPopup();
+        }).addTo(map);
 
-        const activePulseIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='pulse-icon'></div>", iconSize: [22, 22], iconAnchor: [11, 11] });
-        const passiveStaticIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='viewed-icon'></div>", iconSize: [14, 14], iconAnchor: [7, 7] });
-
-        // 4. PIPELINE DATA INTEGRATION
+        // ==========================================
+        // 4. PIPELINE DATA INTEGRATION & INTERACTIVE POPUPS
+        // ==========================================
         Papa.parse(csvUrl, {
             download: true,
             header: true,
@@ -132,40 +125,148 @@
                         const lng = parseFloat(row.Longitude);
 
                         if (!isNaN(lat) && !isNaN(lng)) {
+                            const timestamp = row.Timestamp;
+                            // Skip empty rows without a timestamp
+                            if(!timestamp) return;
+
                             const name = row.Name || 'Acquisition Target';
-                            const description = row.Description || 'No active prospectus text provided.';
-                            let photoUrl = row['Site Photo'] || row.ImageURL || '';
+                            const description = row['Other Description'] || 'No active prospectus text provided.';
+                            let photoUrl = row['Site Photo'] || '';
+                            const mgtStatus = row['Management Status'] || '';
+
+                            // Determine Marker Color Logic
+                            let iconColorClass = 'marker-blue'; // Default
+                            if (mgtStatus.includes('2.') || mgtStatus.includes('5.') || mgtStatus.includes('Rejected') || mgtStatus.includes('Do Not Proceed')) {
+                                iconColorClass = 'marker-red';
+                            } else if (mgtStatus.includes('4.') || mgtStatus.includes('Recommended')) {
+                                iconColorClass = 'marker-green';
+                            } else if (mgtStatus.includes('1.') || mgtStatus.includes('3.') || mgtStatus.includes('Investigate')) {
+                                iconColorClass = 'marker-yellow';
+                            }
+
+                            const activeMarkerIcon = L.divIcon({ 
+                                className: 'custom-div-icon', 
+                                html: `<div class='pulse-icon ${iconColorClass}'></div>`, 
+                                iconSize: [22, 22], iconAnchor: [11, 11] 
+                            });
 
                             // Google Drive iFrame Bypass
                             let imageHTML = '';
-                            if (photoUrl) {
-                                if (photoUrl.includes('drive.google.com')) {
-                                    const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-                                    if (match) { 
-                                        imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`; 
-                                    }
-                                } else {
-                                    imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
-                                }
+                            if (photoUrl && photoUrl.includes('drive.google.com')) {
+                                const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                                if (match) imageHTML = `<iframe src="https://drive.google.com/file/d/${match[1]}/preview" class="card-img" style="border: none;"></iframe>`; 
+                            } else if (photoUrl) {
+                                imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
                             }
 
+                            // Build the exact WhatsApp Text
+                            const whatsappText = `📍 *NEW LAND PROSPECT: ${name}*
+*Status:* ${mgtStatus || 'Pending Review'}
+*Coordinates:* ${row['Coordinates'] || lat + ', ' + lng}
+
+📏 *Extent:* ${row['Extent of Land'] || 'N/A'}
+💰 *Price per Perch:* LKR ${row['Price per Perch'] || 'N/A'}
+💰 *Total Price:* LKR ${row['Total Price'] || 'N/A'}
+
+📋 *Clearance & Title:*
+${row['Checklist'] || 'N/A'}
+*Title Notes:* ${row['Title Check Details'] || 'N/A'}
+
+*Description:* ${description}
+📸 *Drive Photos:* ${photoUrl}`;
+
+                            // Build the Interactive Popup Card
                             const cardContent = `
                                 <div class="card-header">${name}</div>
                                 ${imageHTML}
                                 <div class="card-body">
-                                    <p>${description}</p>
+                                    <p style="font-weight:bold; color:#004b87; margin-bottom: 5px;">Extent: ${row['Extent of Land'] || 'N/A'}</p>
+                                    <p style="margin-bottom: 10px;">${description}</p>
+                                    
+                                    <hr style="margin: 10px 0; border: 0; border-top: 1px solid #eee;">
+                                    
+                                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">Management Action</h4>
+                                    
+                                    <select id="status-${timestamp}" class="form-input">
+                                        <option value="" disabled ${!mgtStatus ? 'selected' : ''}>Select Status...</option>
+                                        <option value="1. Previously Inspected Property" ${mgtStatus.includes('1.') ? 'selected' : ''}>1. Previously Inspected</option>
+                                        <option value="2. Previously Evaluated and Rejected" ${mgtStatus.includes('2.') ? 'selected' : ''}>2. Evaluated & Rejected</option>
+                                        <option value="3. Investigate more" ${mgtStatus.includes('3.') ? 'selected' : ''}>3. Investigate More</option>
+                                        <option value="4. Recommended for Further Evaluation" ${mgtStatus.includes('4.') ? 'selected' : ''}>4. Recommended to Proceed</option>
+                                        <option value="5. Do Not Proceed" ${mgtStatus.includes('5.') ? 'selected' : ''}>5. Do Not Proceed</option>
+                                    </select>
+                                    
+                                    <input type="text" id="reason-${timestamp}" class="form-input" placeholder="Reason (if rejected)" value="${row['Rejection Reason'] || ''}">
+                                    <textarea id="comments-${timestamp}" class="form-input" placeholder="Additional comments..." style="resize: vertical;">${row['Management Comments'] || ''}</textarea>
+                                    
+                                    <button onclick="updateStatus('${timestamp}')" style="background: #004b87; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-bottom: 8px;">
+                                        Update Database
+                                    </button>
+                                    
+                                    <button onclick="copyForWhatsApp(\`${encodeURIComponent(whatsappText)}\`)" style="background: #25D366; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                                        Copy for WhatsApp 📱
+                                    </button>
                                 </div>
                             `;
 
-                            const marker = L.marker([lat, lng], { icon: activePulseIcon }).addTo(map).bindPopup(cardContent);
-                            marker.on('click', function() { this.setIcon(passiveStaticIcon); });
+                            L.marker([lat, lng], { icon: activeMarkerIcon }).addTo(map).bindPopup(cardContent);
                         }
                     }
                 });
             }
         });
 
-        // 5. ADVANCED PARCEL MEASUREMENT ENGINE
+        // ==========================================
+        // 5. DATABASE UPDATE & WHATSAPP FUNCTIONS
+        // ==========================================
+        async function updateStatus(timestamp) {
+            const statusElement = document.getElementById(`status-${timestamp}`);
+            const reasonElement = document.getElementById(`reason-${timestamp}`);
+            const commentsElement = document.getElementById(`comments-${timestamp}`);
+
+            // Visual feedback that it's loading
+            const originalColor = statusElement.style.backgroundColor;
+            statusElement.style.backgroundColor = "#e0e0e0"; 
+
+            try {
+                const response = await fetch(webAppUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        timestamp: timestamp,
+                        status: statusElement.value,
+                        reason: reasonElement.value,
+                        comments: commentsElement.value
+                    })
+                });
+                
+                const result = await response.json();
+                if(result.status === 'success') {
+                    alert('Status successfully updated in the database!');
+                    location.reload(); // Instantly refresh the page to update the marker color!
+                } else {
+                    alert('Update failed: ' + result.message);
+                    statusElement.style.backgroundColor = originalColor;
+                }
+            } catch (error) {
+                console.error('Error updating:', error);
+                alert('Failed to connect to the database. Check your internet or console.');
+                statusElement.style.backgroundColor = originalColor;
+            }
+        }
+
+        function copyForWhatsApp(encodedText) {
+            const textToCopy = decodeURIComponent(encodedText);
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                alert("Land details copied to clipboard! You can now paste it into WhatsApp.");
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+                alert("Copy failed. Please manually select the text.");
+            });
+        }
+
+        // ==========================================
+        // 6. ADVANCED PARCEL MEASUREMENT ENGINE
+        // ==========================================
         let isDrawing = false; let drawnPoints = []; let drawPointsGroup = L.layerGroup().addTo(map); let livePolyline = null; let finalPolygon = null;
 
         function toggleDrawMode() {
@@ -228,6 +329,5 @@
 
         function clearDrawings() { drawnPoints = []; drawPointsGroup.clearLayers(); livePolyline = null; finalPolygon = null; document.getElementById('statsPanel').style.display = 'none'; }
     </script>
-
 </body>
 </html>
