@@ -55,7 +55,7 @@
         <div id="statsPanel" class="measurement-stats">
             <div id="statARP" style="color: #004b87; font-size: 14px;"></div>
             <div id="statAcres"></div>
-            . <div id="statPerches"></div>
+            <div id="statPerches"></div>
             <div id="statHectares"></div>
             <div id="statFeet"></div>
         </div>
@@ -68,7 +68,6 @@
         const csvUrl = baseCsvUrl + '&v=' + new Date().getTime(); 
         const webAppUrl = "https://script.google.com/macros/s/AKfycbzzSS1NI5VqKSOGqhEbDeEjNLAaIzUIcSpMKQNCGHvOdPHj8hl0HRaEtQ1ZAgP_w-pJYg/exec";
 
-        // Global state storage to allow instant pop-up rebuilding
         const markersMap = {};
         const rowsDataMap = {};
 
@@ -112,28 +111,24 @@
                 imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
             }
 
-            // Generate Map URLs natively
             const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-            row['Google Maps Link'] = mapsUrl; // Push internally into local entry object
+            row['Google Maps Link'] = mapsUrl; 
 
-            let allDataText = "";
             let allDataHTML = "<div class='data-scrollbox' style='max-height: 140px; overflow-y: auto; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; line-height: 1.4;'>";
 
             for (const [columnName, columnValue] of Object.entries(row)) {
-                if (columnValue && !['Latitude', 'Longitude', 'Site Photo', 'Timestamp', 'Coordinates'].includes(columnName)) {
-                    allDataText += `*${columnName}:* ${columnValue}\n`;
-                    allDataHTML += `<strong style="color:#004b87;">${columnName}:</strong> ${columnValue}<br><hr style="margin:4px 0; border:0; border-top:1px solid #eee;">`;
+                if (columnValue && !['Latitude', 'Longitude', 'Site Photo', 'Timestamp', 'Coordinates', 'Google Maps Link'].includes(columnName)) {
+                    
+                    // FIX: Beautiful Checklist Bullet Point Parsing
+                    if (columnName.toLowerCase().includes('checklist')) {
+                        const listItems = columnValue.split(',').map(item => item.trim()).join('<br>• ');
+                        allDataHTML += `<strong style="color:#004b87;">${columnName}:</strong><br>• ${listItems}<br><hr style="margin:4px 0; border:0; border-top:1px solid #eee;">`;
+                    } else {
+                        allDataHTML += `<strong style="color:#004b87;">${columnName}:</strong> ${columnValue}<br><hr style="margin:4px 0; border:0; border-top:1px solid #eee;">`;
+                    }
                 }
             }
             allDataHTML += "</div>";
-
-            const whatsappText = `📍 *NEW LAND PROSPECT: [${projectId}] ${name}*
-*Status:* ${mgtStatus || 'Pending Review'}
-*Google Maps Navigation:* ${mapsUrl}
-
-📋 *ALL PROPERTY DETAILS:*
-${allDataText}
-📸 *Drive Photos:* ${photoUrl}`;
 
             return `
                 <div class="card-header">[${projectId}] ${name}</div>
@@ -160,7 +155,8 @@ ${allDataText}
                         Update Database
                     </button>
                     
-                    <button onclick="copyForWhatsApp(\`${encodeURIComponent(whatsappText)}\`)" style="background: #25D366; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                    <!-- DYNAMIC WHATSAPP BUTTON CALL -->
+                    <button onclick="copyForWhatsApp('${projectId}')" style="background: #25D366; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold;">
                         Copy for WhatsApp 📱
                     </button>
                 </div>
@@ -181,7 +177,6 @@ ${allDataText}
                             const projectId = row['Project Number'];
                             if(!projectId) return; 
 
-                            // Map structural memory assignment
                             rowsDataMap[projectId] = row;
 
                             const mgtStatus = row['Management Status'] || '';
@@ -203,7 +198,6 @@ ${allDataText}
                             const cardHtml = generateCardContent(row);
                             const marker = L.marker([lat, lng], { icon: activeMarkerIcon }).addTo(map).bindPopup(cardHtml);
                             
-                            // Map instance tracking
                             markersMap[projectId] = marker;
                         }
                     }
@@ -211,7 +205,6 @@ ${allDataText}
             }
         });
 
-        // LIVE TWO-WAY DATA MODIFICATION ENGINE
         async function updateStatus(projectId, event) {
           const statusElement = document.getElementById(`status-${projectId}`);
           const reasonElement = document.getElementById(`reason-${projectId}`);
@@ -241,14 +234,14 @@ ${allDataText}
               const responseData = await response.json();
               
               if(responseData.status === 'success') {
-                  // 1. Locally update the internal JSON storage array state
                   const row = rowsDataMap[projectId];
                   row['Management Status'] = selectedStatus;
                   row['Rejection Reason'] = reasonElement.value;
                   row['Management Comments'] = commentsElement.value;
-                  row['Management Update Time'] = new Date().toLocaleString(); // Local update visibility marker
+                  
+                  // Formats live UI timestamp into nice 12-hour local string without refreshing page
+                  row['Management Update Time'] = new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo', hour12: true }); 
 
-                  // 2. Instant Local Marker Color Switcher
                   const iconDiv = document.getElementById(`icon-${projectId}`);
                   if (iconDiv) {
                       iconDiv.classList.remove('marker-blue', 'marker-yellow', 'marker-green', 'marker-red');
@@ -263,11 +256,10 @@ ${allDataText}
                       }
                   }
 
-                  // 3. Instant Card Popup Structure Rewrite Engine
                   const updatedCardHtml = generateCardContent(row);
                   markersMap[projectId].setPopupContent(updatedCardHtml);
 
-                  alert('Database Updated Successfully! Changes are preserved and visible.');
+                  alert('Database Updated Successfully!');
                   map.closePopup(); 
               } else {
                   alert('Backend error: ' + responseData.message);
@@ -285,12 +277,40 @@ ${allDataText}
           }
         }
 
-        function copyForWhatsApp(encodedText) {
-            const textToCopy = decodeURIComponent(encodedText);
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                alert("Details with clickable map routing copied!");
+        // FIX: The WhatsApp copy function now reads LIVE data so it is always perfectly synced
+        function copyForWhatsApp(projectId) {
+            const row = rowsDataMap[projectId];
+            if(!row) return;
+
+            const name = row.Name || 'Acquisition Target';
+            const mgtStatus = row['Management Status'] || 'Pending Review';
+            const mapsUrl = row['Google Maps Link'] || `https://www.google.com/maps?q=${row.Latitude},${row.Longitude}`;
+
+            let allDataText = "";
+            for (const [columnName, columnValue] of Object.entries(row)) {
+                if (columnValue && !['Latitude', 'Longitude', 'Site Photo', 'Timestamp', 'Coordinates', 'Google Maps Link'].includes(columnName)) {
+                    
+                    if (columnName.toLowerCase().includes('checklist')) {
+                        const textListItems = columnValue.split(',').map(item => item.trim()).join('\n- ');
+                        allDataText += `*${columnName}:*\n- ${textListItems}\n`;
+                    } else {
+                        allDataText += `*${columnName}:* ${columnValue}\n`;
+                    }
+                }
+            }
+
+            const whatsappText = `📍 *NEW LAND PROSPECT: [${projectId}] ${name}*
+*Status:* ${mgtStatus}
+*Google Maps:* ${mapsUrl}
+
+📋 *ALL PROPERTY DETAILS:*
+${allDataText}
+📸 *Drive Photos:* ${row['Site Photo'] || 'N/A'}`;
+
+            navigator.clipboard.writeText(whatsappText).then(() => {
+                alert("Details with latest updates and live map route copied!");
             }).catch(err => {
-                alert("Copy failed.");
+                alert("Copy failed. Check browser permissions.");
             });
         }
 
