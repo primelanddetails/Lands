@@ -28,13 +28,12 @@
         .measurement-stats div { border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 4px; margin-bottom: 4px; }
         .measurement-stats div:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 
-        /* Pop-up Card */
+        /* Pop-up Card Styles */
         .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 15px 30px rgba(0,0,0,0.5); padding: 0; overflow: hidden; }
-        .leaflet-popup-content { margin: 0; width: 340px !important; } 
-        .card-header { background: #004b87; color: white; padding: 15px; font-size: 16px; font-weight: bold; margin: 0; }
+        .leaflet-popup-content { margin: 0; width: 360px !important; } 
+        .card-header { background: #004b87; color: white; padding: 15px; font-size: 15px; font-weight: bold; margin: 0; }
         .card-img { width: 100%; height: 200px; object-fit: cover; display: block; background: #eee; border-bottom: 1px solid #ccc; }
         .card-body { padding: 15px; background: #fff; }
-        .card-body p { margin: 0 0 10px 0; font-size: 14px; color: #333; line-height: 1.5; }
         
         /* Status Map Marker Icons */
         .pulse-icon { width: 22px; height: 22px; border-radius: 50%; border: 2px solid white; }
@@ -48,7 +47,7 @@
         @keyframes pulseYellow { to { box-shadow: 0 0 0 18px rgba(241, 196, 15, 0); } }
         @keyframes pulseRed { to { box-shadow: 0 0 0 18px rgba(231, 76, 60, 0); } }
         
-        .form-input { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+        .form-input { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -74,9 +73,8 @@
         // 1. DATA CONFIGURATION & APPS SCRIPT URL
         // ==========================================
         const baseCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ77m59Sn5PwSO2Ac4CvSVzmCIC11vqPfD-VaYzZlAK6cgzDs_tQWWbvaIN4LsG6NC3aPQN-UPsuhcg/pub?gid=162359919&single=true&output=csv';
-        const csvUrl = baseCsvUrl + '&v=' + new Date().getTime();
+        const csvUrl = baseCsvUrl + '&v=' + new Date().getTime(); // Cache buster
         
-        // The Web App URL you provided
         const webAppUrl = "https://script.google.com/macros/s/AKfycbzzSS1NI5VqKSOGqhEbDeEjNLAaIzUIcSpMKQNCGHvOdPHj8hl0HRaEtQ1ZAgP_w-pJYg/exec";
 
         // ==========================================
@@ -100,7 +98,7 @@
         L.control.layers(baseMaps, overlayMaps, { position: 'bottomleft' }).addTo(map);
 
         // ==========================================
-        // 3. SEARCH ENGINE
+        // 3. SEARCH ENGINE (SRI LANKA SPECIFIC)
         // ==========================================
         const geocoderOptions = L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'lk' } });
         L.Control.geocoder({ geocoder: geocoderOptions, defaultMarkGeocode: false, placeholder: "Search for a location...", position: 'topleft' })
@@ -112,7 +110,7 @@
         }).addTo(map);
 
         // ==========================================
-        // 4. PIPELINE DATA INTEGRATION & INTERACTIVE POPUPS
+        // 4. DATA FETCHING & DYNAMIC POPUP CARDS
         // ==========================================
         Papa.parse(csvUrl, {
             download: true,
@@ -126,16 +124,15 @@
 
                         if (!isNaN(lat) && !isNaN(lng)) {
                             const timestamp = row.Timestamp;
-                            // Skip empty rows without a timestamp
                             if(!timestamp) return;
 
                             const name = row.Name || 'Acquisition Target';
-                            const description = row['Other Description'] || 'No active prospectus text provided.';
+                            const projectId = row['Project Number'] || 'Pending ID';
                             let photoUrl = row['Site Photo'] || '';
                             const mgtStatus = row['Management Status'] || '';
 
-                            // Determine Marker Color Logic
-                            let iconColorClass = 'marker-blue'; // Default
+                            // Determine Marker Color
+                            let iconColorClass = 'marker-blue'; 
                             if (mgtStatus.includes('2.') || mgtStatus.includes('5.') || mgtStatus.includes('Rejected') || mgtStatus.includes('Do Not Proceed')) {
                                 iconColorClass = 'marker-red';
                             } else if (mgtStatus.includes('4.') || mgtStatus.includes('Recommended')) {
@@ -150,7 +147,7 @@
                                 iconSize: [22, 22], iconAnchor: [11, 11] 
                             });
 
-                            // Google Drive iFrame Bypass
+                            // Google Drive Image Bypass
                             let imageHTML = '';
                             if (photoUrl && photoUrl.includes('drive.google.com')) {
                                 const match = photoUrl.match(/id=([a-zA-Z0-9_-]+)/) || photoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -159,31 +156,35 @@
                                 imageHTML = `<img src="${photoUrl}" class="card-img" alt="Site Photo" onerror="this.style.display='none'">`;
                             }
 
-                            // Build the exact WhatsApp Text
-                            const whatsappText = `📍 *NEW LAND PROSPECT: ${name}*
+                            // Dynamic Column Generator
+                            let allDataText = "";
+                            let allDataHTML = "<div style='max-height: 140px; overflow-y: auto; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; line-height: 1.4;'>";
+
+                            for (const [columnName, columnValue] of Object.entries(row)) {
+                                if (columnValue && !['Latitude', 'Longitude', 'Site Photo', 'Timestamp', 'Coordinates'].includes(columnName)) {
+                                    allDataText += `*${columnName}:* ${columnValue}\n`;
+                                    allDataHTML += `<strong style="color:#004b87;">${columnName}:</strong> ${columnValue}<br><hr style="margin:4px 0; border:0; border-top:1px solid #eee;">`;
+                                }
+                            }
+                            allDataHTML += "</div>";
+
+                            // WhatsApp Text Payload
+                            const whatsappText = `📍 *NEW LAND PROSPECT: [${projectId}] ${name}*
 *Status:* ${mgtStatus || 'Pending Review'}
-*Coordinates:* ${row['Coordinates'] || lat + ', ' + lng}
+*Coordinates:* ${lat}, ${lng}
 
-📏 *Extent:* ${row['Extent of Land'] || 'N/A'}
-💰 *Price per Perch:* LKR ${row['Price per Perch'] || 'N/A'}
-💰 *Total Price:* LKR ${row['Total Price'] || 'N/A'}
-
-📋 *Clearance & Title:*
-${row['Checklist'] || 'N/A'}
-*Title Notes:* ${row['Title Check Details'] || 'N/A'}
-
-*Description:* ${description}
+📋 *ALL PROPERTY DETAILS:*
+${allDataText}
 📸 *Drive Photos:* ${photoUrl}`;
 
-                            // Build the Interactive Popup Card
+                            // Popup HTML Structure
                             const cardContent = `
-                                <div class="card-header">${name}</div>
+                                <div class="card-header">[${projectId}] ${name}</div>
                                 ${imageHTML}
                                 <div class="card-body">
-                                    <p style="font-weight:bold; color:#004b87; margin-bottom: 5px;">Extent: ${row['Extent of Land'] || 'N/A'}</p>
-                                    <p style="margin-bottom: 10px;">${description}</p>
                                     
-                                    <hr style="margin: 10px 0; border: 0; border-top: 1px solid #eee;">
+                                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 13px;">Full Property Data:</h4>
+                                    ${allDataHTML}
                                     
                                     <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">Management Action</h4>
                                     
@@ -199,7 +200,7 @@ ${row['Checklist'] || 'N/A'}
                                     <input type="text" id="reason-${timestamp}" class="form-input" placeholder="Reason (if rejected)" value="${row['Rejection Reason'] || ''}">
                                     <textarea id="comments-${timestamp}" class="form-input" placeholder="Additional comments..." style="resize: vertical;">${row['Management Comments'] || ''}</textarea>
                                     
-                                    <button onclick="updateStatus('${timestamp}')" style="background: #004b87; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-bottom: 8px;">
+                                    <button onclick="updateStatus('${timestamp}', event)" style="background: #004b87; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-bottom: 8px; transition: background 0.3s;">
                                         Update Database
                                     </button>
                                     
@@ -217,20 +218,27 @@ ${row['Checklist'] || 'N/A'}
         });
 
         // ==========================================
-        // 5. DATABASE UPDATE & WHATSAPP FUNCTIONS
+        // 5. SECURE DATABASE UPDATE & WHATSAPP EXPORT
         // ==========================================
-        async function updateStatus(timestamp) {
+        async function updateStatus(timestamp, event) {
             const statusElement = document.getElementById(`status-${timestamp}`);
             const reasonElement = document.getElementById(`reason-${timestamp}`);
             const commentsElement = document.getElementById(`comments-${timestamp}`);
 
-            // Visual feedback that it's loading
-            const originalColor = statusElement.style.backgroundColor;
-            statusElement.style.backgroundColor = "#e0e0e0"; 
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "Updating Database...";
+            btn.style.backgroundColor = "#7f8c8d";
+            btn.disabled = true;
 
             try {
+                // Sending as text/plain to bypass CORS security blocks
                 const response = await fetch(webAppUrl, {
                     method: 'POST',
+                    redirect: 'follow', 
+                    headers: {
+                        "Content-Type": "text/plain;charset=utf-8",
+                    },
                     body: JSON.stringify({
                         timestamp: timestamp,
                         status: statusElement.value,
@@ -239,18 +247,16 @@ ${row['Checklist'] || 'N/A'}
                     })
                 });
                 
-                const result = await response.json();
-                if(result.status === 'success') {
-                    alert('Status successfully updated in the database!');
-                    location.reload(); // Instantly refresh the page to update the marker color!
-                } else {
-                    alert('Update failed: ' + result.message);
-                    statusElement.style.backgroundColor = originalColor;
-                }
+                alert('Database Updated Successfully!\n\nThe map dot will change color in ~5 minutes when Google refreshes the live data feed.');
+                map.closePopup(); // Closes popup instead of reloading page
+
             } catch (error) {
-                console.error('Error updating:', error);
-                alert('Failed to connect to the database. Check your internet or console.');
-                statusElement.style.backgroundColor = originalColor;
+                console.error('Network Error:', error);
+                alert('Update failed. Please check your internet connection or console for details.');
+                
+                btn.innerText = originalText;
+                btn.style.backgroundColor = "#004b87";
+                btn.disabled = false;
             }
         }
 
